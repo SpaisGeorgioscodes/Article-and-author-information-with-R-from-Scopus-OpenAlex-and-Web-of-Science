@@ -1,0 +1,46 @@
+library(openalexR)
+library(data.table)
+
+# Your email
+your_mail <- "your@mail.com"
+
+# Give the issn of the Journal
+journal_issn <-  "1540-6261" 
+
+# Create the url
+u1 <- "https://api.openalex.org/works?"
+u2 <- "filter=primary_location.source.issn:"
+l1 <- paste0(u1,u2)
+l3 <- ",type:article"
+l4<-"&select=authorships"
+
+# Make the API request
+url_issn <- paste0(l1,journal_issn,l3,l4)
+l_auth<-oa_request(query_url = url_issn,
+                   mailto =your_mail) 
+# Cleaning
+l2 <- unlist(l_auth,recursive = F)
+l3 <- unlist(l2,recursive = F)
+rm(l2)
+l_ids <- list()
+for (i in 1:length(l3)){
+  
+  l_ids[[i]] <- l3[[i]]$author$id
+  
+}
+rm(l3)
+vec_of_ids<- unlist(l_ids)
+vec_of_ids<-as.vector(vec_of_ids)
+vec_of_ids<- vec_of_ids[!duplicated(vec_of_ids)]
+
+# Save the data
+dt<-data.table(OpenAlex_Authors_id =vec_of_ids)
+saved_file_name <- paste0("OA_Author_id_",journal_issn,".csv")
+fwrite(dt,saved_file_name)
+
+
+
+
+
+
+

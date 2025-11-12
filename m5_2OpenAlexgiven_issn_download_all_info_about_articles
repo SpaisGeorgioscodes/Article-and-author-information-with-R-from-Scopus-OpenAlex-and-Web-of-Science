@@ -1,5 +1,5 @@
-
-#Install packages 
+#Dowload article relevant information with API from OpenAlex
+# Install packages 
 package_list <- c(
   "data.table", # an extension of data frames
   "tidyverse",

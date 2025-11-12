@@ -1,0 +1,163 @@
+library(openalexR)
+library(data.table)
+library(dplyr)
+# Add your email 
+your_mail <- "your@mail.com" 
+
+# Load authors ids
+OA_authors_ids <- fread(
+  "OA_Author_id_1540-6261.csv")
+
+n_authors <- dim(OA_authors_ids)[1]
+list_works_info <- list()
+list_authors_aff_of_works <- list()
+
+# Names of the csv files
+works_file_names <- "works_info.csv"
+auth_aff_file_names <- "aff_auth.csv"
+
+# Create the API Request url
+OA_authors_ids$mag_id <- sapply(
+  OA_authors_ids$OpenAlex_Authors_id, 
+  FUN = function(x){
+    mag = substr(x, 
+                 start = 22, 
+                 stop =nchar(x))
+    return(mag)
+  })
+
+OA_authors_ids$works_api_url <- sapply(
+  OA_authors_ids$mag_id, 
+  FUN = function(x){
+    w_api <- paste0(
+      "https://api.openalex.org/works?filter=author.id:",
+      x)
+    return(w_api) 
+  })
+
+# Loop with the API requests
+for ( i in 1:n_authors){
+  
+  print(i)
+  
+  
+  
+  url_author_works <- OA_authors_ids$works_api_url[i]
+  #API request
+  
+  i_works_list <- oa_request(query_url = url_author_works,
+                             mailto = your_mail, 
+                             verbose = T)
+  
+  if (length(i_works_list)==0){
+    
+    list_works_info[[i]] <- NA
+    list_authors_aff_of_works[[i]] <- NA
+    
+    next
+    
+  } else {
+    #now <- i_works_list
+    #i_works_list <- now
+    #clean variables works
+    
+    # create i_authorship_list
+    i_authorship_list <- lapply(i_works_list, function(lis){
+      return(lis$authorship)
+    })
+    
+    i_authorship_list <- lapply(i_authorship_list, function(lis){
+      num_authors <- length(lis)
+      for (i in 1:num_authors){
+        lis[[i]]$authid <-lis[[i]]$author$id 
+        lis[[i]]$display_name <-lis[[i]]$author$display_name
+        if (length(lis[[i]]$author$orcid)==0) {
+          lis[[i]]$orcid <- ""
+        }else {
+          lis[[i]]$orcid <- lis[[i]]$author$orcid
+        }
+        
+        if (length(lis[[i]]$institutions)==0 ) {
+          lis[[i]]$inst_id <- ""
+          lis[[i]]$inst_name <- ""
+        } else {
+          lis[[i]]$inst_id <- lis[[i]]$institutions[[1]]$id
+          lis[[i]]$inst_name <- lis[[i]]$institutions[[1]]$display_name
+        }
+      }
+      for ( i in 1:num_authors){
+        lis[[i]]$author <-NULL
+        lis[[i]]$institutions <- NULL
+        lis[[i]]$raw_affiliation_strings<-NULL
+        lis[[i]]$countries <- NULL
+        
+      }
+      lis <- do.call("bind_rows",lis)
+      return(lis)
+    })
+    for ( i_w in 1:length(i_works_list)){
+      
+      i_authorship_list[[i_w]]$work_ref <- 
+        i_works_list[[i_w]]$id
+    }
+    
+    # remove some variables
+    i_works_list = lapply(i_works_list,function(lis){
+      
+      lis$journal_name = lis$primary_location$source$display_name
+      lis$issn_l =lis$primary_location$source$issn_l
+      lis$volume = lis$biblio$volume
+      lis$issue = lis$bilio$issue
+      lis$first_page = lis$biblio$first_page
+      lis$last_page = lis$biblio$last_page
+      lis$number_authors <- length(lis$authorship)
+      lis$ids <- NULL
+      lis$primary_location <- NULL
+      lis$open_access <-NULL
+      lis$corresponding_author_ids <- NULL
+      lis$corresponding_institution_ids <-NULL
+      lis$apc_list <- NULL
+      lis$apc_paid <- NULL
+      lis$biblio <- NULL
+      lis$concepts <- NULL
+      lis$mesh <- NULL
+      lis$locations_count<- NULL
+      lis$locations <- NULL
+      lis$best_oa_location <- NULL
+      lis$counts_by_year <-NULL
+      lis$sustainable_development_goals <- NULL
+      lis$referenced_works <- NULL
+      lis$related_works <-NULL
+      lis$abstract_inverted_index <- NULL
+      lis$grants <- NULL
+      lis$authorships <-NULL
+      return(lis)
+    } )
+    
+    i_works_dt <- do.call("bind_rows", i_works_list)
+    i_authorship_dt <- do.call(
+      "bind_rows",
+      i_authorship_list)
+    i_works_dt$auth_ref <-  OA_authors_ids$OpenAlex_Authors_id[i]
+    rm(list = 
+         c("i_authorship_list",
+           "i_works_list"))
+    
+    list_authors_aff_of_works[[i]]<- i_authorship_dt
+    list_works_info[[i]] <- i_works_dt
+  }
+  
+}
+
+
+# Convert list to data.frames
+dt_works_info <- do.call("bind_rows", list_works_info)
+rm(list_works_info)
+dt_authors_aff_of_works <- do.call(
+  "bind_rows", list_authors_aff_of_works)
+
+# Save the files
+fwrite(dt_works_info,
+       works_file_names)
+fwrite(dt_authors_aff_of_works,
+       auth_aff_file_names)

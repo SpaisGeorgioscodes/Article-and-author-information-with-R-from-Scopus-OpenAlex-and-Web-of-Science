@@ -1,0 +1,172 @@
+package_list <- c(
+  "data.table", # an extension of data frames
+  "tidyverse",
+  "httr", # using Scopus API
+  "jsonlite", # read and write excel data
+  "dplyr"
+)
+for (p in package_list) {
+  if (p %in% installed.packages() == FALSE) {
+    install.packages(p, dependencies = TRUE)
+  }
+  library(p, character.only = TRUE)
+}
+
+# Denote your API key
+api_key <- "my_API _key"
+# the issn of the journal
+issn <- "1540-6261"
+
+# Download only articles
+doc_type <- "Article"
+
+# Parameters that control for the Api Restrictions
+max_request <- 45
+page_start <- 1
+
+
+get_by_issn <- function(issn,max_request =45,
+                        doc_type="Article",api_key, page_start = 1){
+  library(httr)
+  library(jsonlite)
+  library(data.table)
+  library(dplyr)
+  headers <- c(
+    "Content-Type" = "application/json",
+    "X-ApiKey" = api_key)
+  params <- list()
+  # Part 1 how many requests
+  url <- paste0(
+    "https://api.clarivate.com/apis/wos-starter/v1/documents?",
+    "db=WOS&q=%20DT%3D",
+    doc_type,
+    "%20AND%20IS%3D",
+    issn,
+    "&limit=5",
+    "&page=",
+    "1"
+  )
+  res1 <- GET(
+    url = url, 
+    add_headers(headers) )
+  Sys.sleep(1.2)
+  if ( res1$status_code!=200) {
+    print("Problem code")
+    print(res1$status_code)
+    #return(response$status_code)
+  } else {
+    jdt_1 <- content(res1, as ="parsed")
+    total <- jdt_1$metadata$total
+    
+    n_of_requests <- ceiling(total/50) 
+    print(paste0("Total articles ",
+                 as.character(total),
+                 ", ",
+                 "Number of request ", 
+                 as.character(n_of_requests)))
+    n_loop <- min(max_request,n_of_requests)
+    all_d <- list()
+    headers <- c(
+      "Content-Type" = "application/json",
+      "X-ApiKey" = api_key)
+    params <- list()
+    
+    for ( i in page_start:(page_start+n_loop-1)){
+      url <- paste0(
+        "https://api.clarivate.com/apis/wos-starter/v1/documents?",
+        "db=WOS&q=%20DT%3D",
+        doc_type,
+        "%20AND%20IS%3D",
+        issn,
+        "&limit=50",
+        "&page=",
+        as.character(i))
+      
+      response <- GET(
+        url = url, 
+        add_headers(headers))
+      Sys.sleep(1)
+      if ( response$status_code!=200) {
+        print("Problem code")
+        print(response$status_code)
+        #return(response$status_code)
+      } else {
+        json_data <- content(response, as ="parsed")
+        d <- json_data$hits
+        all_d <- append(all_d,d)
+      }
+      
+      
+    } # loop end
+    
+    auth_list <- lapply(all_d, FUN = function(lis){
+      if (length(lis$names$authors)<=0){
+        lis <-lis$names$authors
+      }else {
+        lis <-lis$names$authors
+        lis <-do.call("bind_rows", lis)
+      }
+      
+      
+      # 
+    })
+    
+    
+    all_d <- lapply(all_d,FUN = function(lis){
+      lis$types <- unlist(lis$types)
+      lis$sourceTypes <- unlist(lis$sourceTypes)
+      #source (6)
+      lis$sourceTitle <- lis$source$sourceTitle
+      lis$publishYear <- lis$source$publishYear
+      lis$publishMonth <- lis$source$publishMonth
+      lis$volume <- lis$source$volume
+      lis$issue <- lis$source$issue
+      #page (4)
+      lis$pagesRange<- lis$source$pages$range
+      lis$pagesBegin <- lis$source$pages$begin
+      lis$pagesEnd <- lis$source$pages$end
+      lis$pagesCount <- lis$source$pages$count
+      lis$source <- NULL
+      # Remove authors
+      lis$numberOfAuthors <- length(lis$names$authors)
+      lis$names <- NULL
+      #identifiers (2)
+      lis$doi <- lis$identifiers$doi
+      lis$issn <- lis$identifiers$issn
+      lis$identifiers <- NULL
+      #
+      lis$citations <- NULL
+      lis$links <- NULL
+      lis$keywords <- NULL
+      return(lis)
+    })
+    for (i_l in 1:length(all_d)){
+      auth_list[[i_l]]$dc_ref <- all_d[[i_l]]$uid 
+    }
+    
+    works <- do.call("bind_rows", all_d)
+    auth <- do.call("bind_rows",auth_list)
+    l_return <- list(
+      works = works,
+      auth = auth)
+    return(l_return)
+  }
+  
+} # end of the function
+
+l <- get_by_issn(issn, max_request, doc_type, api_key, page_start )
+
+works <- l$works
+auth <- l$auth
+name_works <- "works"
+name_auth <- "auth"
+
+fwrite(
+  works,
+  paste0(name_works,".csv")
+)
+
+fwrite(
+  auth,
+  paste0(name_auth,".csv")
+)

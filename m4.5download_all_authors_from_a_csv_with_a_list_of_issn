@@ -1,0 +1,42 @@
+library(rscopus) 
+library(data.table)
+library(dplyr) 
+#######  
+# here you save the API key
+api_key <-   "your_API_key"
+set_api_key(api_key)
+
+dt_issn=fread("issns.csv") # issns.csv is a csv file with the first column 
+# the issn of the journals 
+n=dim(dt_issn) # the number of issns (or journals)
+v_issns=dt_issn[,1] # Keeps only the columns with the issns
+############
+##  scopus_search() This function wraps generic_elsevier_api 
+##to give a scopus search from the Elsevier Scopus
+## Search API
+#############
+
+queryp1="ISSN("
+queryp2="\""
+queryp4="\")"
+queryp5="  AND  DOCTYPE(\"ar\")"
+paste0(queryp1,queryp2,q,queryp4,queryp5)
+i=1
+list_of_authors_by_issn=list()
+for (issn in v_issns){
+  
+  query = paste0(queryp1,queryp2,issn,queryp4,queryp5)
+  x=scopus_search(query, view = "COMPLETE")
+  
+  x_raw <- gen_entries_to_df(x$entries)
+  x_authors_data <- x_raw$author
+  au=x_authors_data$authid
+  au=au[!duplicated(au)]
+  list_of_authors_by_issn[[i]] <- au
+  names(list_of_authors_by_issn)[i] <- issn 
+  i=i+1
+  
+}
+final_auth_id <- unlist(list_of_authors_by_issn)
+final_auth_id <-final_auth_id[!duplicated(final_auth_id)]
+fwrite(final_auth_id,"auth_id.csv")

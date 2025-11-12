@@ -1,0 +1,245 @@
+library(rscopus) 
+library(data.table)
+library(dplyr) 
+#Set API key  
+api_key <-  "your_API_key"
+set_api_key(api_key)
+#################
+#Load the the csv file with 
+# with the scopus ids data
+authors=fread("JF_only_auth_id.csv",colClasses = "character")
+names(authors)[1]="auth_id"
+authors=authors[auth_id!=""]
+
+
+authors=as.data.frame(authors)
+authors < -authors[,1]
+number_of_authors=dim(authors)[1]
+
+#Give names to files that will be saved
+affil_save <- "JF_PA_affiliations.csv"
+authors_save <- "JA_PA_authors.csv"
+dc_save <- "JF_PA_document.csv"
+
+ls_dc=list()
+ls_auth=list()
+ls_aff=list()
+
+# The following loop, uses the Author Scopus ID
+# and saves in the lists: ls_dc document information for each author, 
+#ls_auth information for the authors of the documents,
+# and  ls_aff information for the affiliations of the authors. 
+for (i in 1:number_of_authors){
+  
+  dum<-author_data(authors[i,1]) 
+  dum1=dum$full_data
+  
+  ls_dc[[i]] <-as.data.frame(dum1$df) 
+  names(ls_dc)[[i]]<-as.character(authors[i,1])
+  
+  ls_auth[[i]] <- as.data.frame(dum1$author)
+  names(ls_auth)[[i]]<-as.character(authors[i,1])
+  
+  ls_aff[[i]] <- as.data.frame(dum1$affiliation)
+  names(ls_aff)[[i]]<- as.character(authors[i,1])
+  
+  print(i)
+}
+
+
+# We create to variables dc_ids, auth_ref
+# dc_ids to match scopus document ids 
+# with co-authors
+# auth_ref to match the author 
+
+for (i in 1:number_of_authors){
+  n_doc <- dim(ls_dc[[i]])[1]
+  n_auth <- dim(ls_auth[[i]])[1]
+  ls_auth[[i]]$dc_ids=rep("NA",n_auth)
+  ls_dc[[i]]$auth_ref <-authors[i,1]
+  for (entry in 1:n_doc) {
+    ls_auth[[i]][ls_auth[[i]]$entry_number== entry,"dc_ids"] <- 
+      ls_dc[[i]][ls_dc[[i]]$entry_number==entry,'dc:identifier' ]
+    
+    # x1_authors[entry_number==entry]$dc_ids
+    #=x1_papers[entry_number==entry]$`dc:identifier`
+  }
+  
+}
+
+# Affiliations
+# Unify the list to a single data.frame 
+# A data frame for affiliation
+# Removes data.frames with no information
+n_ls_aff<-list()
+zero_remove <- rep(T,length(ls_aff))
+for (i in 1:length(ls_aff)){
+  if (dim(ls_aff[[i]])[1]==0)  zero_remove[i]<- F
+  
+}
+
+n_ls_aff <- ls_aff[zero_remove]
+keep_variables_aff <- c("entry_number","@_fa","affiliation-url",
+                        "afid", "affilname",          
+                        "affiliation-city","affiliation-country" )
+
+
+
+for (i in  1:length(n_ls_aff)){
+  
+  table <- n_ls_aff[[i]]
+  table <- as.data.frame(table)
+  if ("V1" %in% names(table)) table$V1 <- NULL
+  
+  missing_variables<-setdiff( 
+    keep_variables_aff, 
+    names(table))
+  
+  length_of_missing_variables = length(missing_variables)
+  if (length_of_missing_variables==0) { 
+    n_ls_aff[[i]] = subset(table
+                           , select=keep_variables_aff)
+    
+    next
+  }else {
+    n_rows <- dim(table)[1]
+    help_matrix=matrix(character(0),
+                       nrow = n_rows,
+                       ncol =length(keep_variables_aff)) 
+    
+    help_matrix<-as.data.frame(help_matrix)
+    names(help_matrix)<-keep_variables_aff
+    
+    extra_variables=as.data.frame(
+      subset(help_matrix,select = missing_variables))
+    
+    names(extra_variables) <- missing_variables
+    table1<-cbind(table,extra_variables)
+    
+    table1=subset(table1, select=keep_variables_aff)
+    n_ls_aff[[i]] = table1 
+  }
+  
+}
+df_with_affiliations=do.call(rbind,n_ls_aff)
+fwrite(df_with_affiliations,
+       file = affil_save, 
+       row.names = T)
+
+
+#Authors 
+keep_variables_auth<-c( "@_fa","@seq","author-url","authid",
+                        "authname", "surname","given-name",
+                        "initials","entry_number", 
+                        "afid.@_fa", "afid.$",
+                        "orcid","dc_ids")
+n_ls_auth<-list()
+
+for (i in  1:length(ls_auth)){
+  table<-ls_auth[[i]]
+  if ("V1" %in% names(table)) table <-table[,-c("V1")]
+  
+  missing_variables<-setdiff(
+    keep_variables_auth,
+    names(table))
+  
+  length_of_missing_variables = length(missing_variables)
+  if (length_of_missing_variables==0)
+  { 
+    n_ls_auth[[i]] = subset(
+      table, 
+      select=keep_variables_auth)
+    
+    names(n_ls_auth)[i] <- names(ls_auth)[i]
+  }else {
+    n_rows <- dim(table)[1]
+    help_matrix=matrix(
+      character(0), 
+      nrow = n_rows, 
+      ncol =length(keep_variables_auth)) 
+    
+    help_matrix<-as.data.frame(help_matrix)
+    
+    names(help_matrix)<-keep_variables_auth
+    extra_variables <- 
+      as.data.frame(help_matrix[,missing_variables])
+    
+    names(extra_variables) <- missing_variables
+    table1<-cbind(table,extra_variables)
+    
+    table1=subset(table1, select=keep_variables_auth)
+    n_ls_auth[[i]] = table1 
+    names(n_ls_auth)[i] <- names(ls_auth)[i]
+  }
+  
+}
+df_with_auth=do.call(rbind,n_ls_auth)
+fwrite(df_with_auth,
+       file = authors_save, 
+       row.names = TRUE)
+rm(df_with_auth)
+rm(df_with_affiliations)
+
+variables_keep <- c("@_fa", "prism:url", "dc:identifier",
+                    "eid", "dc:title", "dc:creator", 
+                    "prism:publicationName","prism:issn",
+                    "prism:eIssn", 
+                    "prism:volume", "prism:issueIdentifier", 
+                    "prism:pageRange", "prism:coverDate",
+                    "prism:coverDisplayDate",  "prism:doi",
+                    "dc:description", "citedby-count",
+                    "prism:aggregationType",
+                    "subtype","subtypeDescription", 
+                    "author-count.@limit",
+                    "author-count.@total","author-count.$", 
+                    "source-id", "fund-no", "openaccess",              
+                    "openaccessFlag", "freetoread.value.$",
+                    "freetoreadLabel.value.$",
+                    "entry_number", "fund-acr", "fund-sponsor",
+                    "pii", "authkeywords", 
+                    "pubmed-id", "article-number", 
+                    "auth_ref")
+
+n_ls_dc <- list()
+# The list must contain data.frames no data.tables 
+for (i in  1:length(ls_dc)){
+  table<-ls_dc[[i]]
+  if ("V1" %in% names(table)) table$V1 <- NULL
+  
+  missing_variables<-setdiff(
+    variables_keep, 
+    names(table))
+  
+  length_of_missing_variables = length(missing_variables)
+  if (length_of_missing_variables==0)
+  { 
+    n_ls_dc[[i]] = subset(
+      table, 
+      select=variables_keep)
+    names(n_ls_dc)[i] <- names(ls_dc)[i]
+  }else {
+    n_rows <- dim(table)[1]
+    help_matrix=matrix(
+      character(0), 
+      nrow = n_rows, 
+      ncol =length(variables_keep)) 
+    help_matrix<-as.data.frame(help_matrix)
+    names(help_matrix)<-variables_keep
+    extra_variables = 
+      as.data.frame(help_matrix[,missing_variables])
+    
+    names(extra_variables) <- missing_variables
+    table1<-cbind(table,extra_variables)
+    
+    table1=subset(table1, select=variables_keep)
+    n_ls_dc[[i]] = table1 
+    names(n_ls_dc)[i] <- names(ls_dc)[i]
+  }
+  
+}
+
+df_with_dc=do.call(rbind,n_ls_dc)
+fwrite(df_with_dc,
+       file=dc_save,
+       row.names = T)
+rm(n_ls_auth)

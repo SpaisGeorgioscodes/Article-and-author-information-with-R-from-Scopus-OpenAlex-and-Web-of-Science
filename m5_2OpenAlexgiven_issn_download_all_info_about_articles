@@ -1,0 +1,158 @@
+
+#Install packages 
+package_list <- c(
+  "data.table", # an extension of data frames
+  "tidyverse",
+  "openalexR", # using Scopus API
+  "xlsx", # read and write excel data
+  "dplyr"
+)
+for (p in package_list) {
+  if (p %in% installed.packages() == FALSE) {
+    install.packages(p, dependencies = TRUE)
+  }
+  library(p, character.only = TRUE)
+}
+
+# Main code 
+library(openalexR)
+library(data.table)
+library(dplyr)
+
+# Download all articles of an academic journal 
+# given the issn of the journal 
+issn_of_journal <- "1540-6261" 
+
+# give your email
+your_email <- "your@mail.com"
+
+# costruction of the url
+u1 <- "https://api.openalex.org/works?"
+u2 <- "filter=primary_location.source.issn:"
+url1<-paste0(u1,u2)
+url<-paste0(url1,issn_of_journal)
+
+# The Api request 
+d<-oa_request(query_url = url,
+              mailto =your_email,
+              verbose = T)
+
+# Create the author file
+d <-lapply(d,function(lis){
+  lis$number_of_authors <- length(lis$authorships)
+  return(lis)
+})
+authorship_list <- lapply(d, function(lis){
+  return(lis$authorship)
+})
+
+authorship_list <- lapply(
+  authorship_list, 
+  function(lis){
+    num_authors <- length(lis)
+    if (num_authors ==0 ) {
+      return(lis)
+    }
+    for (i in 1:num_authors){
+      lis[[i]]$authid <-lis[[i]]$author$id 
+      lis[[i]]$display_name <-lis[[i]]$author$display_name
+      if (length(lis[[i]]$author$orcid)==0) {
+        lis[[i]]$orcid <- ""
+      }else {
+        lis[[i]]$orcid <- lis[[i]]$author$orcid
+      }
+      
+      if (length(lis$instiutions)==0 ) {
+        lis[[i]]$inst_id <- ""
+        lis[[i]]$inst_name <- ""
+      } else {
+        lis[[i]]$inst_id <- lis[[i]]$institutions[[1]]$id
+        lis[[i]]$inst_name <- lis[[i]]$institutions[[1]]$display_name
+      }
+    }
+    for ( i in 1:num_authors){
+      lis[[i]]$author <-NULL
+      lis[[i]]$institutions <- NULL
+      lis[[i]]$raw_affiliation_strings<-NULL
+      lis[[i]]$countries <- NULL
+      
+    }
+    lis <- do.call("bind_rows",lis)
+    return(lis)
+  })
+
+
+for ( i_w in 1:length(d)){
+  
+  authorship_list[[i_w]]$work_ref <- 
+    d[[i_w]]$id
+}
+
+
+# remove some variables
+d = lapply(d,function(lis){
+  
+  lis$journal_name = lis$primary_location$source$display_name
+  lis$issn_l =lis$primary_location$source$issn_l
+  lis$volume = lis$biblio$volume
+  lis$issue = lis$bilio$issue
+  lis$first_page = lis$biblio$first_page
+  lis$last_page = lis$biblio$last_page
+  lis$number_of_authors <- length(lis$authorships)
+  lis$ids <- NULL
+  lis$primary_location <- NULL
+  lis$open_access <-NULL
+  lis$corresponding_author_ids <- NULL
+  lis$corresponding_institution_ids <-NULL
+  lis$apc_list <- NULL
+  lis$apc_paid <- NULL
+  lis$biblio <- NULL
+  lis$concepts <- NULL
+  lis$mesh <- NULL
+  lis$locations_count<- NULL
+  lis$locations <- NULL
+  lis$best_oa_location <- NULL
+  lis$counts_by_year <-NULL
+  lis$sustainable_development_goals <- NULL
+  lis$referenced_works <- NULL
+  lis$related_works <-NULL
+  lis$abstract_inverted_index <- NULL
+  lis$grants <- NULL
+  lis$authorships <-NULL
+  return(lis)
+} )
+
+# Convert lists to data.frames
+works_dt <- do.call("bind_rows", d)
+authorship_dt <- do.call(
+  "bind_rows",
+  authorship_list) 
+
+# Keep only articles
+works_dt <- as.data.table(works_dt)
+works_dt <- works_dt[type == "article"]
+works_dt <- works_dt[type_crossref == "journal-article"]
+
+#Remove works with less two or less pages
+works_dt$diff_pages <- as.integer(works_dt$last_page)- 
+  as.integer(works_dt$first_page)
+
+works_dt <- works_dt[diff_pages>2]
+
+authorship_dt <- as.data.table(authorship_dt)
+authorship_dt <- authorship_dt[work_ref %in% works_dt$id]
+
+# Create the names of the files
+# Save them to csv files
+
+auth_file_name <- paste0(
+  "OA_works_",
+  issn_of_journal,
+  "_auth_affil.csv")
+fwrite(authorship_dt, auth_file_name)
+works_file_name <- paste0(
+  "OA_works_",
+  issn_of_journal,
+  "_works.csv")
+fwrite(works_dt, works_file_name)
+

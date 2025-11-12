@@ -1,0 +1,124 @@
+library(httr)
+library(jsonlite)
+library(data.table)
+library(dplyr)
+api_key <- "my_API_key"
+issn <- "1540-6261"
+
+doc_type <- "Article"
+max_request <- 45
+page_start <- 1
+
+# A function that makes the API request
+get_authIDs_by_issn <- function(issn,max_request =45,
+                                doc_type="Article",api_key, page_start = 1){
+  library(httr)
+  library(jsonlite)
+  library(data.table)
+  library(dplyr)
+  headers <- c(
+    "Content-Type" = "application/json",
+    "X-ApiKey" = api_key)
+  params <- list()
+  # Part 1 how many requests
+  url <- paste0(
+    "https://api.clarivate.com/apis/wos-starter/v1/documents?",
+    "db=WOS&q=%20DT%3D",
+    doc_type,
+    "%20AND%20IS%3D",
+    issn,
+    "&limit=5",
+    "&page=",
+    "1"
+  )
+  res1 <- GET(
+    url = url, 
+    add_headers(headers) )
+  Sys.sleep(1.2)
+  if ( res1$status_code!=200) {
+    print("Problem code")
+    print(res1$status_code)
+    #return(response$status_code)
+  } else {
+    jdt_1 <- content(res1, as ="parsed")
+    total <- jdt_1$metadata$total
+    
+    n_of_requests <- ceiling(total/50) 
+    print(paste0("Total articles ",
+                 as.character(total),
+                 ", ",
+                 "Number of request ", 
+                 as.character(n_of_requests)))
+    n_loop <- min(max_request,n_of_requests)
+    all_d <- list()
+    headers <- c(
+      "Content-Type" = "application/json",
+      "X-ApiKey" = api_key)
+    params <- list()
+    
+    for ( i in page_start:(page_start+n_loop-1)){
+      url <- paste0(
+        "https://api.clarivate.com/apis/wos-starter/v1/documents?",
+        "db=WOS&q=%20DT%3D",
+        doc_type,
+        "%20AND%20IS%3D",
+        issn,
+        "&limit=50",
+        "&page=",
+        as.character(i))
+      
+      response <- GET(
+        url = url, 
+        add_headers(headers))
+      Sys.sleep(1)
+      if ( response$status_code!=200) {
+        print("Problem code")
+        print(response$status_code)
+        #return(response$status_code)
+      } else {
+        json_data <- content(response, as ="parsed")
+        d <- json_data$hits
+        all_d <- append(all_d,d)
+      }
+      
+      
+    } # loop end
+    
+    auth_list <- lapply(all_d, FUN = function(lis){
+      if (length(lis$names$authors)<=0){
+        lis <-lis$names$authors
+      }else {
+        lis <-lis$names$authors
+        lis <-do.call("bind_rows", lis)
+      }
+      
+      
+      # 
+    })
+    rm(all_d) 
+    
+    auth <- do.call("bind_rows",auth_list)
+    auth <- as.data.frame.table(auth)
+    auth <- auth[!duplicated(researcherId)]
+    auth_ids <- auth$researcherId
+    
+    return(auth_ids)
+  }
+  
+} # end of the function
+
+auth_ids <- get_by_issn(
+  issn, 
+  max_request, 
+  doc_type, 
+  api_key, 
+  page_start = 1)
+
+
+
+fwrite(
+  auth_ids,
+  paste0("auth_ids",
+         issn,
+         ".csv"))
+

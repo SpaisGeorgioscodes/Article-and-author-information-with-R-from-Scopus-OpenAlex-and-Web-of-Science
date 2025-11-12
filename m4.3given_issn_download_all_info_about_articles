@@ -1,0 +1,88 @@
+# Given the ISSN of a journal the R code that follows 
+# downloads all the article relevant information 
+# of the journal articles, given that you have an
+# API key for scopus 
+
+# Install packages 
+package_list <- c(
+  "data.table", # an extension of data frames
+  "tidyverse",
+  "rscopus", # using Scopus API
+  "xlsx", # read and write excel data
+  "dplyr"
+)
+for (p in package_list) {
+  if (p %in% installed.packages() == FALSE) {
+    install.packages(p, dependencies = TRUE)
+  }
+  library(p, character.only = TRUE)
+}
+
+# Main code
+library(rscopus) 
+library(data.table)
+library(dplyr) 
+#######  
+api_key <- "your_API_key"
+set_api_key(api_key)
+journal_issn <- "1540-6261" # The journal issn
+
+# Create query for scopus_search()
+# How to write Query some information are here 
+# https://dev.elsevier.com/sc_search_tips.html
+queryp1="ISSN("
+queryp2="\""
+queryp4="\")"
+queryp5="  AND  DOCTYPE(\"ar\")"
+query_to_use <- paste0(queryp1,queryp2,journal_issn,queryp4,queryp5)
+############
+##  scopus_search() This function wraps generic_elsevier_api 
+##to give a scopus search from the Elsevier Scopus
+## Search API
+#############
+#Issn  of Journal of Finance  
+#  1540-6261 (online) 0022-1082 (print)
+
+
+#Use scopus_search() function
+x=scopus_search(query = query_to_use, 
+                view = "COMPLETE") 
+
+# Transforms the data into lists of data tables
+x_raw <- gen_entries_to_df(x$entries)
+# data table with papers
+x1_papers <- x_raw$df
+x1_papers=as.data.table(x1_papers)
+
+# data table with affiliations
+x1_affiliations <- x_raw$affiliation 
+x1_affiliations=as.data.table(x1_affiliations)
+
+# data table with authors
+x1_authors <- x_raw$author 
+x1_authors=as.data.table(x1_authors)
+
+x1_papers$all_authors_id=rep("NA",dim(x1_papers)[1])
+x1_authors$dc_ids=rep("NA",dim(x1_authors)[1])
+x1_affiliations$dc_ids=rep("NA",dim(x1_affiliations)[1])
+
+n_doc =dim(x1_papers)[1]
+for (entry in 1:n_doc) {
+  x1_authors[entry_number==entry]$dc_ids=
+    x1_papers[entry_number==entry]$`dc:identifier`
+  x1_affiliations[entry_number==entry]$dc_ids=
+    x1_papers[entry_number==entry]$`dc:identifier`
+  
+  if(x1_papers$`author-count.@total`[entry]==0) next
+  vector_authors=as.vector(x1_authors[entry_number==entry]$authid)
+  x1_papers[entry_number==entry]$all_authors_id=
+    paste0(vector_authors,collapse = ",")
+}
+
+# Save data tables to csv files
+file_name_papers <- paste0("papers_",journal_issn,".csv")
+file_name_affiliations <- paste0("affiliations_",journal_issn,".csv")
+file_name_authors <- paste0("authors_",journal_issn,".csv")
+fwrite(x1_papers, file =file_name_papers)
+fwrite(x1_affiliations, file = file_name_affiliations)
+fwrite(x1_authors, file=file_name_authors)

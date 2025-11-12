@@ -1,0 +1,75 @@
+library(openalexR)
+library(data.table)
+
+# Load a csv with the ISSN
+issn_dt <- fread("issn_Data.csv")
+
+# Your email
+your_mail <- "your@mail.com"
+
+#Create the url
+u1 <- "https://api.openalex.org/works?"
+u2 <- "filter=primary_location.source.issn:"
+l1 <- paste0(u1,u2)
+l_last<-"&select=authorships"
+vec_of_issn <- as.vector(issn_dt[,1])
+vec_of_issn <- vec_of_issn[!is.na(vec_of_issn)]
+n_of_issn <- length(vec_of_issn)
+
+# Make the API request
+if (n_of_issn <50 ) {
+  issn_strings<- paste0(vec_of_issn,"|")
+  url_issns <- pste0(l1,issn_strings,l_last)
+  l_auth50 <- oa_request(query_url = url_issns,
+                         mailto =your_mail) 
+  
+  l2 <- unlist(l_auth50,recursive = F)
+  l3 <- unlist(l2,recursive = F)
+  rm(l2)
+  l_ids <- list()
+  for (i in 1:length(l3)){
+    
+    l_ids[[i]] <- l3[[i]]$author$id
+    
+  }
+  rm(l3)
+  vec_of_ids<- unlist(l_ids)
+  vec_of_ids<-as.vector(vec_of_ids)
+  vec_of_ids<- vec_of_ids[!duplicated(vec_of_ids)]
+  
+  dt<-data.table(OpenAlex_Authors_id =vec_of_ids)
+  
+  fwrite(dt,"OA_Author_ids.csv")
+  
+  
+}else{
+  list_per_issn_ids <- list()
+  for ( i in n_of_issn ) {
+    issn_i <- vec_of_issn[i]
+    url_i <- paste0(l1, issn_i, l_last)
+    l_auth <- oa_request(query_url = url_issns,
+                         mailto =your_mail) 
+    
+    l2 <- unlist(l_auth,recursive = F)
+    l3 <- unlist(l2,recursive = F)
+    rm(l2)
+    l_ids <- list()
+    for (i in 1:length(l3)){
+      
+      l_ids[[i]] <- l3[[i]]$author$id
+      
+    }
+    rm(l3)
+    vec_of_ids<- unlist(l_ids)
+    vec_of_ids<-as.vector(vec_of_ids)
+    vec_of_ids<- vec_of_ids[!duplicated(vec_of_ids)]
+    list_per_issn_ids[[i]]<-vec_of_ids
+  }
+  all_ids <- unlist(list_per_issn_ids,recursive = F) 
+  all_ids <-as.vector(all_ids)
+  all_ids <- all_ids[!duplicated(all_ids)]
+  
+  dt<-data.table(OpenAlex_Authors_id =all_ids)
+  
+  fwrite(dt,"OA_Author_ids.csv")
+}
